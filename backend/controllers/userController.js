@@ -1,7 +1,12 @@
-import bcrypt from "bcryptjs";
-import User from "../models/userModel.js";
-import jwt from "jsonwebtoken";
-import { sendEmail } from "../utils/email.js";
+// import bcrypt from "bcryptjs";
+// import User from "../models/userModel.js";
+// import jwt from "jsonwebtoken";
+// import { sendEmail } from "../utils/email.js";
+
+const bcrypt = require("bcryptjs");
+const User = require("../models/userModel.js");
+const jwt = require("jsonwebtoken");
+const { sendEmail } = require("../utils/email.js");
 
 //Token handling
 
@@ -44,7 +49,7 @@ const generateToken = (user, res) => {
 //user creation
 //token generation
 
-export const registerUser = async (req, res) => {
+exports.registerUser = async (req, res) => {
   const { email, name, mobileNumber, password, address } = req.body;
   const image = req.file;
 
@@ -79,7 +84,7 @@ export const registerUser = async (req, res) => {
 //comparing password
 //token genneration
 
-export const loginUser = async (req, res) => {
+exports.loginUser = async (req, res) => {
   const { email, password } = req.body;
 
   try {
@@ -109,7 +114,7 @@ export const loginUser = async (req, res) => {
 //getting user ID from parameter
 //finding user using id and ignoring password
 //checking user existance
-export const getSingleUser = async (req, res) => {
+exports.getSingleUser = async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -129,12 +134,13 @@ export const getSingleUser = async (req, res) => {
 //checking user existance
 //email validation
 //saving updated details
-export const updateUser = async (req, res) => {
+exports.updateUser = async (req, res) => {
   const { id } = req.params;
   const { email, name, mobileNumber, address } = req.body;
 
   try {
     let user = await User.findById(id);
+
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -146,7 +152,14 @@ export const updateUser = async (req, res) => {
       }
     }
 
-    user = await User.save({
+    // user = await User.save({
+    //   email,
+    //   name,
+    //   mobileNumber,
+    //   address,
+    // });
+
+    user = await User.findByIdAndUpdate(id, {
       email,
       name,
       mobileNumber,
@@ -167,7 +180,7 @@ export const updateUser = async (req, res) => {
 //create message with reset link
 //send email with reset link
 
-export const forgotPassword = async (req, res) => {
+exports.forgotPassword = async (req, res) => {
   const user = await User.findOne({ email: req.body.email });
   try {
     if (!user) {
@@ -209,7 +222,7 @@ export const forgotPassword = async (req, res) => {
 
 //------------------------------- Logout user --------------------------------
 //set cookie expire time 0
-export const logoutUser = (req, res) => {
+exports.logoutUser = (req, res) => {
   try {
     res.cookie("token", "", {
       expires: new Date(0),
@@ -229,10 +242,11 @@ export const logoutUser = (req, res) => {
 //hashing password before saving
 //updating new password
 
-export const changePassword = async (req, res) => {
+exports.changePassword = async (req, res) => {
   const { currentPassword, newPassword } = req.body;
 
   const userId = req.user.id;
+  console.log(userId);
 
   try {
     const user = await User.findById(userId);

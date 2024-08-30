@@ -1,5 +1,7 @@
-import express from "express";
-import {
+// import express from "express";
+const express = require("express");
+
+const {
   changePassword,
   forgotPassword,
   getSingleUser,
@@ -7,8 +9,8 @@ import {
   logoutUser,
   registerUser,
   updateUser,
-} from "../controllers/userController.js";
-import upload from "../middleware/upload.js";
+} = require("../controllers/userController.js");
+const upload = require("../middleware/upload.js");
 
 const router = express.Router();
 
@@ -21,4 +23,5 @@ router.put("/change/password", changePassword);
 router.post("/forgot/password", forgotPassword);
 router.post("/logout", logoutUser);
 
-export default router;
+module.exports = router;
+// export default router;
