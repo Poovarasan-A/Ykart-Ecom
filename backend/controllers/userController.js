@@ -9,36 +9,47 @@ const jwt = require("jsonwebtoken");
 const { sendEmail } = require("../utils/email.js");
 
 //Token handling
-
-let jwtSecret = "JWWOAPAPODKAMCKAJCJACJACACMAC";
-
 const generateToken = (user, res) => {
-  console.log("User:", user);
-
-  const payload = {
+  const userId = {
     user: {
       id: user.id,
     },
   };
 
   const options = {
-    expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    expires: new Date(
+      Date.now() + process.env.COOKIE_EXPIRE_TIME * 24 * 60 * 60 * 1000
+    ),
     httpOnly: true,
     sameSite: "Strict",
   };
 
-  jwt.sign(payload, jwtSecret, { expiresIn: "1h" }, (err, token) => {
-    if (err) {
-      console.error(`JWT Error: ${err}`);
-      return res.status(500).json({ message: "Token generation failed" });
-    }
+  jwt.sign(
+    userId,
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRE_TIME },
+    (err, token) => {
+      if (err) {
+        console.error(`JWT Error: ${err}`);
+        return res.status(500).json({ message: "Token generation failed" });
+      }
 
-    res.status(201).cookie("token", token, options).json({
-      success: true,
-      user,
-      token,
-    });
-  });
+      const modifiedUser = {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        mobileNumber: user.mobileNumber,
+        address: user.address,
+        avatar: user.avatar,
+      };
+
+      res.status(201).cookie("token", token, options).json({
+        success: true,
+        user: modifiedUser,
+        token,
+      });
+    }
+  );
 };
 
 //-------------------------User Regsitration ---------------------
@@ -54,10 +65,21 @@ exports.registerUser = async (req, res) => {
   const image = req.file;
 
   try {
-    let isEmail = /^[a-z]+@[a-z]+\.[a-z]+$/;
-
+    let isEmail = /^[a-z]+[0-9]*@[a-z]+\.[a-z]+$/;
     if (!isEmail.test(email)) {
       return res.status(400).json({ message: "Please enter valid email" });
+    }
+
+    let ismobNum = /\d{10}/;
+    if (!ismobNum.test(mobileNumber)) {
+      res.status(400).json({ message: "Please enter valid Mobile number" });
+    }
+
+    const isEmailExists = await User.findOne({ email });
+    if (isEmailExists) {
+      return res
+        .status(400)
+        .json({ message: "User already exists, please login" });
     }
 
     const salt = await bcrypt.genSalt(12);
@@ -71,7 +93,6 @@ exports.registerUser = async (req, res) => {
       address,
       avatar: image ? image.filename : null,
     });
-
     generateToken(user, res);
   } catch (error) {
     return res.status(500).json({ message: error.message });
@@ -88,7 +109,7 @@ exports.loginUser = async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    let isEmail = /^[a-z]+@[a-z]+\.[a-z]+$/;
+    let isEmail = /^[a-z]+[0-9]*@[a-z]+\.[a-z]+$/;
     if (!isEmail.test(email)) {
       return res.status(400).json({ message: "Please enter a valid email" });
     }
@@ -102,7 +123,7 @@ exports.loginUser = async (req, res) => {
     if (!isMatch) {
       return res.status(400).json({ message: "Invalid email or password" });
     }
-
+    console.log(user);
     // Generate JWT and set it as a cookie
     generateToken(user, res);
   } catch (error) {
@@ -115,7 +136,7 @@ exports.loginUser = async (req, res) => {
 //finding user using id and ignoring password
 //checking user existance
 exports.getSingleUser = async (req, res) => {
-  const { id } = req.params;
+  const id = req.userId;
 
   try {
     const user = await User.findById(id).select("-password");
@@ -135,8 +156,9 @@ exports.getSingleUser = async (req, res) => {
 //email validation
 //saving updated details
 exports.updateUser = async (req, res) => {
-  const { id } = req.params;
+  const id = req.userId;
   const { email, name, mobileNumber, address } = req.body;
+  const image = req.file;
 
   try {
     let user = await User.findById(id);
@@ -146,24 +168,18 @@ exports.updateUser = async (req, res) => {
     }
 
     if (email) {
-      let isEmail = /^[a-z]+@[a-z]+\.[a-z]+$/;
+      let isEmail = /^[a-z]+[0-9]*@[a-z]+\.[a-z]+$/;
       if (!isEmail.test(email)) {
         return res.status(400).json({ message: "Please enter valid email" });
       }
     }
-
-    // user = await User.save({
-    //   email,
-    //   name,
-    //   mobileNumber,
-    //   address,
-    // });
 
     user = await User.findByIdAndUpdate(id, {
       email,
       name,
       mobileNumber,
       address,
+      avatar: image ? image.filename : null,
     });
 
     res.status(200).json({ message: "User updated successfully", user });
@@ -187,7 +203,7 @@ exports.forgotPassword = async (req, res) => {
       return res.status(404).json({ message: "User email not found" });
     }
 
-    const resetToken = jwt.sign({ id: user._id }, jwtSecret, {
+    const resetToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
       expiresIn: "30m",
     });
 
@@ -220,6 +236,42 @@ exports.forgotPassword = async (req, res) => {
   }
 };
 
+//------------------------ reset password ----------------------
+
+exports.resetPassword = async (req, res) => {
+  const { resetToken } = req.params;
+  const { newPassword } = req.body;
+
+  try {
+    const decoded = jwt.verify(resetToken, process.env.JWT_SECRET);
+    const user = await User.findOne({
+      _id: decoded.id,
+      resetPasswordToken: resetToken,
+      resetPasswordTokenExpire: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res
+        .status(400)
+        .json({ message: "Password reset token is Invalid or expired" });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    user.password = hashedPassword;
+
+    user.resetPasswordToken = undefined;
+    user.resetPasswordTokenExpire = undefined;
+
+    await user.save();
+
+    return res.status(200).json({ message: "Password reset successfully" });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 //------------------------------- Logout user --------------------------------
 //set cookie expire time 0
 exports.logoutUser = (req, res) => {
@@ -245,8 +297,7 @@ exports.logoutUser = (req, res) => {
 exports.changePassword = async (req, res) => {
   const { currentPassword, newPassword } = req.body;
 
-  const userId = req.user.id;
-  console.log(userId);
+  const userId = req.userId;
 
   try {
     const user = await User.findById(userId);
@@ -262,7 +313,7 @@ exports.changePassword = async (req, res) => {
     const salt = await bcrypt.genSalt(12);
     const hashedNewPassword = await bcrypt.hash(newPassword, salt);
 
-    await User.save({
+    await User.findByIdAndUpdate(userId, {
       password: hashedNewPassword,
     });
 
