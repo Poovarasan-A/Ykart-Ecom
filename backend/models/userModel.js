@@ -72,6 +72,8 @@ const userSchema = new mongoose.Schema({
       ref: "Review",
     },
   ],
+  resetPasswordToken: String,
+  resetPasswordTokenExpire: Date,
 });
 
 const User = mongoose.model("User", userSchema);

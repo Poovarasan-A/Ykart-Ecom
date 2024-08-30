@@ -1,8 +1,11 @@
 import bcrypt from "bcryptjs";
 import User from "../models/userModel.js";
 import jwt from "jsonwebtoken";
+import { sendEmail } from "../utils/email.js";
 
 //Token handling
+
+let jwtSecret = "JWWOAPAPODKAMCKAJCJACJACACMAC";
 
 const generateToken = (user, res) => {
   console.log("User:", user);
@@ -13,16 +16,10 @@ const generateToken = (user, res) => {
     },
   };
 
-  const jwtSecret = process.env.JWT_SECRET || "JWWOAPAPODKAMCKAJCJACJACACMAC";
-
-  // Set cookie options
   const options = {
-    expires: new Date(
-      Date.now() + (process.env.COOKIE_EXPIRES_TIME || 7) * 24 * 60 * 60 * 1000
-    ), // Default to 7 days if not set
+    expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production", // Only send over HTTPS in production
-    sameSite: "Strict", // Restrict the cookie to same-site requests
+    sameSite: "Strict",
   };
 
   jwt.sign(payload, jwtSecret, { expiresIn: "1h" }, (err, token) => {
@@ -31,7 +28,6 @@ const generateToken = (user, res) => {
       return res.status(500).json({ message: "Token generation failed" });
     }
 
-    // Set cookie and return response
     res.status(201).cookie("token", token, options).json({
       success: true,
       user,
@@ -50,6 +46,7 @@ const generateToken = (user, res) => {
 
 export const registerUser = async (req, res) => {
   const { email, name, mobileNumber, password, address } = req.body;
+  const image = req.file;
 
   try {
     let isEmail = /^[a-z]+@[a-z]+\.[a-z]+$/;
@@ -67,6 +64,7 @@ export const registerUser = async (req, res) => {
       mobileNumber,
       password: hashedPassword,
       address,
+      avatar: image ? image.filename : null,
     });
 
     generateToken(user, res);
@@ -158,6 +156,54 @@ export const updateUser = async (req, res) => {
     res.status(200).json({ message: "User updated successfully", user });
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+};
+
+//------------------------------ forgot password ----------------------------------
+//Finding user email existance
+//generating reset token
+//store token with expiration time
+//create reset url
+//create message with reset link
+//send email with reset link
+
+export const forgotPassword = async (req, res) => {
+  const user = await User.findOne({ email: req.body.email });
+  try {
+    if (!user) {
+      return res.status(404).json({ message: "User email not found" });
+    }
+
+    const resetToken = jwt.sign({ id: user._id }, jwtSecret, {
+      expiresIn: "30m",
+    });
+
+    user.resetPasswordToken = resetToken;
+    user.resetPasswordTokenExpire = Date.now() + 30 * 60 * 1000;
+
+    await user.save({ validateBeforeSave: false });
+
+    const resetUrl = `http://localhost:5173/reset/password/${resetToken}`;
+
+    console.log(resetUrl);
+
+    const message = `Your password reset link is as follows:\n\n${resetUrl}\n\nIf you have not requested this, please ignore this email.`;
+
+    await sendEmail({
+      email: user.email,
+      subject: "E com password recovery",
+      message,
+    });
+
+    return res
+      .status(200)
+      .json({ message: `Email sent to ${user.email} successfully` });
+  } catch (error) {
+    user.resetPasswordToken = undefined;
+    user.resetPasswordTokenExpire = undefined;
+    await user.save({ validateBeforeSave: false });
+
+    return res.status(500).json({ message: error.message });
   }
 };
 
