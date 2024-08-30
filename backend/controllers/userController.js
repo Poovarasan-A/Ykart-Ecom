@@ -41,6 +41,7 @@ const generateToken = (user, res) => {
         mobileNumber: user.mobileNumber,
         address: user.address,
         avatar: user.avatar,
+        googleId: user.googleId,
       };
 
       res.status(201).cookie("token", token, options).json({
@@ -61,39 +62,59 @@ const generateToken = (user, res) => {
 //token generation
 
 exports.registerUser = async (req, res) => {
-  const { email, name, mobileNumber, password, address } = req.body;
+  const { email, name, mobileNumber, googleId, password, address } = req.body;
   const image = req.file;
 
   try {
-    let isEmail = /^[a-z]+[0-9]*@[a-z]+\.[a-z]+$/;
-    if (!isEmail.test(email)) {
-      return res.status(400).json({ message: "Please enter valid email" });
+    if (googleId) {
+      let user = await User.findOne({ googleId });
+
+      if (!user) {
+        user = await User.create({
+          email,
+          name,
+          mobileNumber,
+          googleId,
+        });
+      }
+      return generateToken(user, res);
     }
 
-    let ismobNum = /\d{10}/;
-    if (!ismobNum.test(mobileNumber)) {
-      res.status(400).json({ message: "Please enter valid Mobile number" });
+    if (!password) {
+      return res.status(401).json({ message: "Password is required" });
     }
 
-    const isEmailExists = await User.findOne({ email });
-    if (isEmailExists) {
-      return res
-        .status(400)
-        .json({ message: "User already exists, please login" });
+    if (password) {
+      let isEmail = /^[a-z]+[0-9]*@[a-z]+\.[a-z]+$/;
+      if (!isEmail.test(email)) {
+        return res.status(400).json({ message: "Please enter valid email" });
+      }
+
+      let ismobNum = /\d{10}/;
+      if (!ismobNum.test(mobileNumber)) {
+        res.status(400).json({ message: "Please enter valid Mobile number" });
+      }
+
+      const isEmailExists = await User.findOne({ email });
+      if (isEmailExists) {
+        return res
+          .status(400)
+          .json({ message: "User already exists, please login" });
+      }
+
+      const salt = await bcrypt.genSalt(12);
+      const hashedPassword = await bcrypt.hash(password, salt);
+
+      const user = await User.create({
+        email,
+        name,
+        mobileNumber,
+        password: hashedPassword,
+        address,
+        avatar: image ? image.filename : null,
+      });
+      generateToken(user, res);
     }
-
-    const salt = await bcrypt.genSalt(12);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    const user = await User.create({
-      email,
-      name,
-      mobileNumber,
-      password: hashedPassword,
-      address,
-      avatar: image ? image.filename : null,
-    });
-    generateToken(user, res);
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
@@ -106,25 +127,22 @@ exports.registerUser = async (req, res) => {
 //token genneration
 
 exports.loginUser = async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, googleId } = req.body;
 
   try {
-    let isEmail = /^[a-z]+[0-9]*@[a-z]+\.[a-z]+$/;
-    if (!isEmail.test(email)) {
-      return res.status(400).json({ message: "Please enter a valid email" });
-    }
-
     const user = await User.findOne({ email });
+
     if (!user) {
-      return res.status(400).json({ message: "Invalid email or password" });
+      return res
+        .status(400)
+        .json({ message: "User not found. Please register" });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(400).json({ message: "Invalid email or password" });
     }
-    console.log(user);
-    // Generate JWT and set it as a cookie
+
     generateToken(user, res);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -137,7 +155,6 @@ exports.loginUser = async (req, res) => {
 //checking user existance
 exports.getSingleUser = async (req, res) => {
   const id = req.userId;
-
   try {
     const user = await User.findById(id).select("-password");
     if (!user) {

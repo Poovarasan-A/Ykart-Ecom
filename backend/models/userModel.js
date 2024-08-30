@@ -18,7 +18,6 @@ const userSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: true,
       minLength: 6,
     },
     avatar: {
@@ -31,6 +30,9 @@ const userSchema = new mongoose.Schema(
       state: String,
       postalCode: Number,
       country: String,
+    },
+    googleId: {
+      type: String,
     },
     isEmailVerified: {
       type: Boolean,
